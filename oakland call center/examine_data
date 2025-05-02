@@ -1,0 +1,26 @@
+import pandas as pd
+import locale
+import matplotlib.pyplot as plt
+
+
+locale.setlocale(locale.LC_TIME, 'en_US.UTF-8')
+
+
+
+data_path = '/c/DATA/Datos/Service_requests_received_by_the_Oakland_Call_Center__OAK_311__20250423.csv'
+
+data = pd.read_csv(data_path)
+data['DATETIMEINIT'] = pd.to_datetime(data['DATETIMEINIT'], format='%m/%d/%Y %I:%M:%S %p')
+
+
+# display number of requests per day
+
+request_dates = data['DATETIMEINIT'].dt.date
+daily_counts = request_dates.value_counts().sort_index()
+
+plt.figure(figsize=(10, 6))
+plt.plot(daily_counts.index, daily_counts.values)
+
+
+# check REQCATEGORY
+print(data['REQCATEGORY'].value_counts())
