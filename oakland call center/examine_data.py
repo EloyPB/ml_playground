@@ -73,8 +73,12 @@ daily_illdump_counts['2023-02-08':'2023-04-18'] = np.nan
 #%% Holt-Winters triple exponential smoothing
 
 holt_winters = HoltWinters(seasonal_period=7)
-holt_winters.fit(daily_illdump_counts.to_numpy(), alpha=0.1, beta=0.1, gamma=0.1)
+series = daily_illdump_counts.to_numpy()
+holt_winters.fit(series, alpha=0.05, beta=0.05, gamma=0.05)
 
+forecasts = holt_winters.forecast(steps=1)
+forecasts = pd.Series(forecasts, index=daily_illdump_counts.index)
 
-
-
+plt.figure()
+plt.plot(daily_illdump_counts)
+plt.plot(forecasts)
