@@ -82,3 +82,6 @@ forecasts = pd.Series(forecasts, index=daily_illdump_counts.index)
 plt.figure()
 plt.plot(daily_illdump_counts)
 plt.plot(forecasts)
+
+
+#%% Measure accuracy for different steps into the future
