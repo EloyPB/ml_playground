@@ -42,8 +42,7 @@ for i in range(1000):
 
     # 1) E-step (expected value of the latent random variables: posterior probability of each component for each point)
     
-    # probability of each point under each component (likelihood)
-    
+    # probability of each point under each component (likelihood in Baye's rule sense)
     likelihood = np.empty((num_points, num_components))
     
     for point_num in range(num_points):
@@ -53,11 +52,7 @@ for i in range(1000):
             norm_factor = np.sqrt((2 * np.pi) ** X.shape[1] * np.linalg.det(cov[:, :, component_num]))
             likelihood[point_num, component_num] = np.exp(exponent) / norm_factor
             
-    p_components = mixing_weights * likelihood;
-    p_components = p_components / np.sum(p_components, axis=1, keepdims=True)
-    
-    
-    # compute log-likelihood
+    # compute log-likelihood of the entire dataset under the mixture model
     log_likelihood = np.sum(np.log(np.sum(mixing_weights * likelihood, axis=1)))
     log_likelihoods.append(log_likelihood)
 
@@ -65,8 +60,14 @@ for i in range(1000):
     if i > 0 and abs(log_likelihoods[-1] - log_likelihoods[-2]) < 1e-6:
         print(f"Converged at iteration {i}")
         break
+        
+            
+    # probality each poing belongs to each component (posterior probability; using Bayes' rule)
+    p_components = mixing_weights * likelihood;
+    p_components = p_components / np.sum(p_components, axis=1, keepdims=True)
     
     
+
     
     # 2) M-step (maximize expected log-likelihood with respect to parameters)
     

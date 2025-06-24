@@ -73,15 +73,32 @@ daily_illdump_counts['2023-02-08':'2023-04-18'] = np.nan
 #%% Holt-Winters triple exponential smoothing
 
 holt_winters = HoltWinters(seasonal_period=7)
-series = daily_illdump_counts.to_numpy()
-holt_winters.fit(series, alpha=0.05, beta=0.05, gamma=0.05)
+series = daily_illdump_counts[:'2023-02-07']
+holt_winters.fit(series.to_numpy(), alpha=0.05, beta=0.05, gamma=0.05)
 
 forecasts = holt_winters.forecast(steps=1)
-forecasts = pd.Series(forecasts, index=daily_illdump_counts.index)
+forecasts = pd.Series(forecasts, index=series.index)
 
 plt.figure()
-plt.plot(daily_illdump_counts)
+plt.plot(series)
 plt.plot(forecasts)
 
 
 #%% Measure accuracy for different steps into the future
+
+num_steps = range(1, 20)
+mean_absolute_error = np.empty(len(num_steps))
+errors = np.empty((len(num_steps), len(series)))
+
+for i, steps in enumerate(num_steps):
+    forecasts = holt_winters.forecast(steps=steps)
+    errors[i] = series - forecasts
+    mean_absolute_error[i] = np.mean(np.abs(series - forecasts))
+
+
+fig, ax = plt.subplots(1, 2)
+ax[0].plot(num_steps, mean_absolute_error)
+ax[0].set_ylabel('mean absolute error')
+ax[0].set_xlabel('# days ahead')
+
+
