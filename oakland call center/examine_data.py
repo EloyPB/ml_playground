@@ -4,6 +4,7 @@ import locale
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from holt_winters import HoltWinters
 
 
@@ -92,13 +93,86 @@ errors = np.empty((len(num_steps), len(series)))
 
 for i, steps in enumerate(num_steps):
     forecasts = holt_winters.forecast(steps=steps)
-    errors[i] = series - forecasts
-    mean_absolute_error[i] = np.mean(np.abs(series - forecasts))
+    errors[i, :] = series - forecasts
+    mean_absolute_error[i] = ((series - forecasts).abs()).mean()
 
 
 fig, ax = plt.subplots(1, 2)
 ax[0].plot(num_steps, mean_absolute_error)
 ax[0].set_ylabel('mean absolute error')
 ax[0].set_xlabel('# days ahead')
+
+colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+percentiles = [50, 25, 5, 2.5]
+for percentile_num, percentile in enumerate(percentiles):
+    ax[1].plot(num_steps, np.nanpercentile(errors, percentile, axis=1), color=colors[percentile_num], label=f'{percentile}%')
+    if percentile != 50:
+        ax[1].plot(num_steps, np.nanpercentile(errors, 100-percentile, axis=1), color=colors[percentile_num])
+ax[1].set_ylabel('error percentiles')
+ax[1].set_xlabel('# days ahead')
+ax[1].legend()
+plt.tight_layout()
+
+
+#%% Try out statsmodels' version
+
+series = daily_illdump_counts[:'2023-02-07']
+model = ExponentialSmoothing(series, trend='add', seasonal='mul', seasonal_periods=7)
+fit_model = model.fit()
+forecast = fit_model.forecast(steps=21)
+
+plt.figure()
+plt.plot(series)
+plt.plot(forecast)
+
+
+#%% Measure accuracy for different steps into the future
+
+num_steps = range(1, 20)
+n_steps_forecasts = np.full((len(num_steps), len(series)), np.nan)
+
+for t in range(14, len(series)-steps-1):
+    if t % 100 == 0:
+        print(f'{t}/{len(series)}')
+    model = ExponentialSmoothing(series[:t], trend='add', seasonal='mul', seasonal_periods=7)
+    fit_model = model.fit()
+    forecasts = fit_model.forecast(steps=max(num_steps))
+    for i, steps in enumerate(num_steps):
+        n_steps_forecasts[i, t+steps-1] = forecasts.iloc[i]
+
+
+mean_absolute_error_statsm = np.empty(len(num_steps))
+for i in range(len(num_steps)):
+    mean_absolute_error_statsm[i] = ((series - n_steps_forecasts[i, :]).abs()).mean()
+    
+    
+plt.figure()
+plt.plot(num_steps, mean_absolute_error, label='mine')
+plt.plot(num_steps, mean_absolute_error_statsm, label='statsmodels')
+plt.legend()
+plt.ylabel('mean absolute error')
+plt.xlabel('# days ahead')
+
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+
+
+
+
 
 
