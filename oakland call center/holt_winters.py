@@ -13,9 +13,9 @@ class HoltWinters:
         
         
     def fit(self, series: np.ndarray, alpha: float, beta: float, gamma: float):
-        self.levels = np.empty_like(series)
-        self.trends = np.empty_like(series)
-        self.seasonals = np.empty_like(series)
+        self.levels = np.empty_like(series, dtype=float)
+        self.trends = np.empty_like(series, dtype=float)
+        self.seasonals = np.empty_like(series, dtype=float)
         
         
         # initial level: average of the first seasonal period
@@ -32,12 +32,12 @@ class HoltWinters:
         for t in range(self.seasonal_period, series.size):
             self.levels[t] = alpha * (series[t] / self.seasonals[t - self.seasonal_period]) + (1 - alpha) * (self.levels[t-1] + self.trends[t-1])
             self.trends[t] = beta * (self.levels[t] - self.levels[t-1]) + (1 - beta) * self.trends[t-1]
-            self.seasonals[t] = gamma * series[t] / self.levels[t] + (1 - gamma) * self.seasonals[t- self.seasonal_period] 
+            self.seasonals[t] = gamma * series[t] / self.levels[t] + (1 - gamma) * self.seasonals[t - self.seasonal_period] 
             
         
     def forecast(self, steps: int) -> np.ndarray:
         forecasts = np.full_like(self.levels, np.nan)
         for t in range(self.seasonal_period, self.levels.size-steps):
-            t_previous_season = t + steps - (steps // self.seasonal_period + 1) * self.seasonal_period
+            t_previous_season = t + steps - ((steps - 1) // self.seasonal_period + 1) * self.seasonal_period
             forecasts[t+steps] = (self.levels[t] + steps*self.trends[t]) * self.seasonals[t_previous_season]
         return forecasts
