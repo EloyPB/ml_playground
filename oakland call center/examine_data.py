@@ -9,7 +9,6 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from holt_winters import HoltWinters
 from statsmodels.tsa.statespace.sarimax import SARIMAX
-from statsmodels.stats.diagnostic import acorr_ljungbox # For Ljung-Box test
 
 
 locale.setlocale(locale.LC_TIME, 'en_US.UTF-8')
@@ -36,6 +35,8 @@ category_counts = data['REQCATEGORY'].value_counts()
 category_counts.plot(kind='barh')
 plt.gca().invert_yaxis()
 plt.tight_layout()
+plt.xlabel('Count')
+plt.tight_layout()
 
 
 #%% display number of requests per day
@@ -47,7 +48,6 @@ daily_counts = request_dates.value_counts().sort_index()
 plt.figure(figsize=(10, 6))
 plt.plot(daily_counts.index, daily_counts.values, '.-')
 plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%a %Y-%m-%d'))
-
 
 
 
@@ -75,26 +75,31 @@ plt.tight_layout()
 plt.show()
 
 
+
 #%% Try a seasonal naive model
 
 num_steps = range(1, 22)
-sn_mae = np.empty(len(num_steps))
-
 seasonal_period = 7
 
+n_steps_forecasts = np.full((len(num_steps), len(series)), np.nan)
+sn_mae = np.empty(len(num_steps))
+sn_mape = np.empty(len(num_steps))
+
+
 for i, steps in enumerate(num_steps):
-    forecasts = pd.Series(np.nan, index=series.index)
-    for t in range(seasonal_period-steps, len(series)-steps):
-        t_previous_season = t + steps - ((steps - 1) // seasonal_period + 1) * seasonal_period
-        forecasts.iloc[t+steps] = series.iloc[t_previous_season]
-        
+    lag = ((steps - 1) // seasonal_period + 1) * seasonal_period
+    for t in range(lag, len(series)):
+        n_steps_forecasts[i, t] = series.iloc[t - lag]
+
     # plt.figure()
     # plt.plot(series)
-    # plt.plot(forecasts)
+    # plt.plot(pd.Series(n_steps_forecasts[i], index=series.index))
     
-    sn_mae[i] = ((series - forecasts).abs()).mean()
+    sn_mae[i] = ((series - n_steps_forecasts[i]).abs()).mean()
+    sn_mape[i] = (((series - n_steps_forecasts[i]).abs())/series*100).mean()
 
 
+np.save('/home/eloy/Code/ml_playground/oakland call center/results/n_steps_forecasts/seasonal_naive.npy', n_steps_forecasts)
 
 
 #%% Holt-Winters triple exponential smoothing
@@ -115,12 +120,14 @@ plt.plot(forecasts)
 
 num_steps = range(1, 22)
 hw_mae = np.empty(len(num_steps))
+hw_mape = np.empty(len(num_steps))
 errors = np.empty((len(num_steps), len(series)))
 
 for i, steps in enumerate(num_steps):
     forecasts = holt_winters.forecast(steps=steps)
     errors[i, :] = series - forecasts
     hw_mae[i] = ((series - forecasts).abs()).mean()
+    hw_mape[i] = (((series - forecasts).abs())/series*100).mean()
 
 
 fig, ax = plt.subplots(1, 2)
@@ -184,8 +191,10 @@ n_steps_forecasts = np.load('/home/eloy/Code/ml_playground/oakland call center/r
 
 
 statsm_hw_mae = np.empty(len(num_steps))
+statsm_hw_mape = np.empty(len(num_steps))
 for i in range(len(num_steps)):
     statsm_hw_mae[i] = ((series - n_steps_forecasts[i, :]).abs()).mean()
+    statsm_hw_mape[i] = (((series - n_steps_forecasts[i, :]).abs())/series*100).mean()
     
     
 plt.figure()
@@ -270,12 +279,22 @@ plt.grid(True)
 plt.show()
 
 
+#%% Try auto-arima
+
+from pmdarima import auto_arima
+
+auto_model = auto_arima(series, seasonal=True, m=7, trace=True, error_action='warn', 
+                        suppress_warnings=True, stepwise=True)
+
+auto_model.summary()
+
+
 #%% Measure accuracy
 
 # split data in train / test and train initial model
 
-series_train = series.iloc[:1000]
-series_test = series.iloc[1000:]
+series_train = series.iloc[:1500]
+series_test = series.iloc[1500:]
 
 model = SARIMAX(series_train, order=(2, 0, 2), seasonal_order=(1, 1, 1, 7))
 fitted_model = model.fit(maxiter=100) 
@@ -294,30 +313,52 @@ for t in range(len(series_test)-max(num_steps)):
         n_steps_forecasts[i, t+steps-1] = predicted_values.iloc[i]
     
     new_data_point = series_test.iloc[[t]]
-    fitted_model = fitted_model.append(new_data_point, refit=True if (t+1)%500 == 0 else False, maxiter=100)
     
-np.save('/home/eloy/Code/ml_playground/oakland call center/results/sarima_n_steps_forecasts.npy', n_steps_forecasts)
+    if (t+1)%500 == 0:
+        refit = True
+        fit_kwargs = {'maxiter': 100}
+    else:
+        refit = False
+        fit_kwargs = {}
+        
+    fitted_model = fitted_model.append(new_data_point, refit=refit, fit_kwargs=fit_kwargs)
+    
+np.save('/home/eloy/Code/ml_playground/oakland call center/results/sarima_(2_0_2)(1_1_1_7)_n_steps_forecasts.npy', n_steps_forecasts)
 
 
 #%% Compare performance 
 
-n_steps_forecasts = np.load('/home/eloy/Code/ml_playground/oakland call center/results/sarima_n_steps_forecasts.npy')
+n_steps_forecasts = np.load('/home/eloy/Code/ml_playground/oakland call center/results/sarima_(2_0_2)(1_1_1_7)_n_steps_forecasts.npy')
 
 
 sarima_mae = np.empty(len(num_steps))
+sarima_mape = np.empty(len(num_steps))
 for i in range(len(num_steps)):
     sarima_mae[i] = ((series_test - n_steps_forecasts[i, :]).abs()).mean()
+    sarima_mape[i] = (((series_test - n_steps_forecasts[i, :]).abs())/series_test*100).mean()
     
-    
-plt.figure()
-plt.plot(num_steps, sn_mae, label='seasonal naive')
-plt.plot(num_steps, hw_mae, label='my holt-winters')
-plt.plot(num_steps, statsm_hw_mae, label='sm holt-winters')
-plt.plot(num_steps, sarima_mae, label='sarima')
-plt.legend()
-plt.ylabel('mean absolute error')
-plt.xlabel('# days ahead')
-plt.gca().xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+
+fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+
+ax[0].plot(num_steps, sn_mae, label='seasonal naive')
+ax[0].plot(num_steps, hw_mae, label='my holt-winters')
+ax[0].plot(num_steps, statsm_hw_mae, label='sm holt-winters')
+ax[0].plot(num_steps, sarima_mae, label='sarima')
+ax[0].legend()
+ax[0].set_ylabel('mean absolute error')
+ax[0].set_xlabel('# days ahead')
+ax[0].xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+
+ax[1].plot(num_steps, sn_mape, label='seasonal naive')
+ax[1].plot(num_steps, hw_mape, label='my holt-winters')
+ax[1].plot(num_steps, statsm_hw_mape, label='sm holt-winters')
+ax[1].plot(num_steps, sarima_mape, label='sarima')
+ax[1].legend()
+ax[1].set_ylabel('mean absolute percentage error (%)')
+ax[1].set_xlabel('# days ahead')
+ax[1].xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+plt.tight_layout()
+
 
     
     
