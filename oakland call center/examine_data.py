@@ -16,6 +16,7 @@ locale.setlocale(locale.LC_TIME, 'en_US.UTF-8')
 
 
 data_path = '/c/DATA/Datos/Service_requests_received_by_the_Oakland_Call_Center__OAK_311__20250423.csv'
+results_path = '/home/eloy/Code/ml_playground/oakland call center/results'
 
 data = pd.read_csv(data_path)
 data['DATETIMEINIT'] = pd.to_datetime(data['DATETIMEINIT'], format='%m/%d/%Y %I:%M:%S %p')
@@ -88,8 +89,8 @@ sn_mape = np.empty(len(num_steps))
 
 for i, steps in enumerate(num_steps):
     lag = ((steps - 1) // seasonal_period + 1) * seasonal_period
-    for t in range(lag, len(series)):
-        n_steps_forecasts[i, t] = series.iloc[t - lag]
+    for t in range(lag - steps, len(series) - steps):
+        n_steps_forecasts[i, t + steps] = series.iloc[t + steps - lag]
 
     # plt.figure()
     # plt.plot(series)
@@ -99,7 +100,7 @@ for i, steps in enumerate(num_steps):
     sn_mape[i] = (((series - n_steps_forecasts[i]).abs())/series*100).mean()
 
 
-np.save('/home/eloy/Code/ml_playground/oakland call center/results/n_steps_forecasts/seasonal_naive.npy', n_steps_forecasts)
+np.save(f'{results_path}/n_steps_forecasts/seasonal_naive.npy', n_steps_forecasts)
 
 
 #%% Holt-Winters triple exponential smoothing
@@ -119,15 +120,20 @@ plt.plot(forecasts)
 #%% Measure accuracy for different steps into the future
 
 num_steps = range(1, 22)
+
+n_steps_forecasts = np.full((len(num_steps), len(series)), np.nan)
+errors = np.empty((len(num_steps), len(series)))
 hw_mae = np.empty(len(num_steps))
 hw_mape = np.empty(len(num_steps))
-errors = np.empty((len(num_steps), len(series)))
 
 for i, steps in enumerate(num_steps):
-    forecasts = holt_winters.forecast(steps=steps)
-    errors[i, :] = series - forecasts
-    hw_mae[i] = ((series - forecasts).abs()).mean()
-    hw_mape[i] = (((series - forecasts).abs())/series*100).mean()
+    n_steps_forecasts[i] = holt_winters.forecast(steps=steps)
+    errors[i, :] = series - n_steps_forecasts[i]
+    hw_mae[i] = ((series - n_steps_forecasts[i]).abs()).mean()
+    hw_mape[i] = (((series - n_steps_forecasts[i]).abs())/series*100).mean()
+    
+    
+np.save(f'{results_path}/n_steps_forecasts/my_holt_winters.npy', n_steps_forecasts)
 
 
 fig, ax = plt.subplots(1, 2)
@@ -173,21 +179,22 @@ plt.plot(forecast)
 num_steps = range(1, 22)
 n_steps_forecasts = np.full((len(num_steps), len(series)), np.nan)
 
-for t in range(14, len(series)-steps-1):
+for t in range(14, len(series)-min(num_steps)):
     if t % 100 == 0:
         print(f'{t}/{len(series)}')
-    model = ExponentialSmoothing(series[:t], trend='add', seasonal='mul', seasonal_periods=7)
+    model = ExponentialSmoothing(series[:t+1], trend='add', seasonal='mul', seasonal_periods=7)
     fit_model = model.fit()
     forecasts = fit_model.forecast(steps=max(num_steps))
     for i, steps in enumerate(num_steps):
-        n_steps_forecasts[i, t+steps-1] = forecasts.iloc[i]
+        if t + steps < len(series):
+            n_steps_forecasts[i, t+steps] = forecasts.iloc[i]
         
-np.save('/home/eloy/Code/ml_playground/oakland call center/results/statmodels_holt_winters_n_steps_forecasts.npy', n_steps_forecasts)
+np.save(f'{results_path}/n_steps_forecasts/statmodels_holt_winters.npy', n_steps_forecasts)
 
 
 #%% Compare performance 
 
-n_steps_forecasts = np.load('/home/eloy/Code/ml_playground/oakland call center/results/statmodels_holt_winters_n_steps_forecasts.npy')
+n_steps_forecasts = np.load(f'{results_path}/n_steps_forecasts/statmodels_holt_winters.npy')
 
 
 statsm_hw_mae = np.empty(len(num_steps))
@@ -302,19 +309,13 @@ fitted_model = model.fit(maxiter=100)
 num_steps = range(1, 22)
 n_steps_forecasts = np.full((len(num_steps), len(series_test)), np.nan)
 
-for t in range(len(series_test)-max(num_steps)):
+for t in range(len(series_test)-min(num_steps)):
     if t % 100 == 0:
         print(f'{t}/{len(series_test)}')
         
-    forecast_obj = fitted_model.get_forecast(steps=max(num_steps))
-    predicted_values = forecast_obj.predicted_mean
-    
-    for i, steps in enumerate(num_steps):
-        n_steps_forecasts[i, t+steps-1] = predicted_values.iloc[i]
-    
     new_data_point = series_test.iloc[[t]]
     
-    if (t+1)%500 == 0:
+    if (t+1)%250 == 0:
         refit = True
         fit_kwargs = {'maxiter': 100}
     else:
@@ -322,37 +323,49 @@ for t in range(len(series_test)-max(num_steps)):
         fit_kwargs = {}
         
     fitted_model = fitted_model.append(new_data_point, refit=refit, fit_kwargs=fit_kwargs)
+        
+    forecast_obj = fitted_model.get_forecast(steps=max(num_steps))
+    predicted_values = forecast_obj.predicted_mean
     
-np.save('/home/eloy/Code/ml_playground/oakland call center/results/sarima_(2_0_2)(1_1_1_7)_n_steps_forecasts.npy', n_steps_forecasts)
+    for i, steps in enumerate(num_steps):
+        if t+steps < len(series_test):
+            n_steps_forecasts[i, t+steps] = predicted_values.iloc[i]
+    
+    
+    
+np.save(f'{results_path}/n_steps_forecasts/sarima_(2_0_2)(1_1_1_7).npy', n_steps_forecasts)
 
 
 #%% Compare performance 
 
-n_steps_forecasts = np.load('/home/eloy/Code/ml_playground/oakland call center/results/sarima_(2_0_2)(1_1_1_7)_n_steps_forecasts.npy')
+sn_forecasts = np.load(f'{results_path}/n_steps_forecasts/seasonal_naive.npy')
+my_hw_forecasts = np.load(f'{results_path}/n_steps_forecasts/my_holt_winters.npy')
+sm_hw_forecasts = np.load(f'{results_path}/n_steps_forecasts/statmodels_holt_winters.npy')
+sarima_forecasts = np.load(f'{results_path}/n_steps_forecasts/sarima_(2_0_2)(1_1_1_7).npy')
 
+all_forecasts = (sn_forecasts[:, 1500:], my_hw_forecasts[:, 1500:], sm_hw_forecasts[:, 1500:], sarima_forecasts)
+model_names = ('seasonal naive', 'my holt-winters', 'sm holt-winters', 'sarima')
 
-sarima_mae = np.empty(len(num_steps))
-sarima_mape = np.empty(len(num_steps))
-for i in range(len(num_steps)):
-    sarima_mae[i] = ((series_test - n_steps_forecasts[i, :]).abs()).mean()
-    sarima_mape[i] = (((series_test - n_steps_forecasts[i, :]).abs())/series_test*100).mean()
-    
 
 fig, ax = plt.subplots(1, 2, figsize=(10, 5))
 
-ax[0].plot(num_steps, sn_mae, label='seasonal naive')
-ax[0].plot(num_steps, hw_mae, label='my holt-winters')
-ax[0].plot(num_steps, statsm_hw_mae, label='sm holt-winters')
-ax[0].plot(num_steps, sarima_mae, label='sarima')
+for model_forecasts, model_name in zip(all_forecasts, model_names):
+
+    mae = np.empty(len(num_steps))
+    mape = np.empty(len(num_steps))
+    for i in range(len(num_steps)):
+        mae[i] = ((series_test - model_forecasts[i, :]).abs()).mean()
+        mape[i] = (((series_test - model_forecasts[i, :]).abs())/series_test*100).mean()
+    
+    ax[0].plot(num_steps, mae, label=model_name)
+    ax[1].plot(num_steps, mape, label=model_name)
+
+
 ax[0].legend()
 ax[0].set_ylabel('mean absolute error')
 ax[0].set_xlabel('# days ahead')
 ax[0].xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
 
-ax[1].plot(num_steps, sn_mape, label='seasonal naive')
-ax[1].plot(num_steps, hw_mape, label='my holt-winters')
-ax[1].plot(num_steps, statsm_hw_mape, label='sm holt-winters')
-ax[1].plot(num_steps, sarima_mape, label='sarima')
 ax[1].legend()
 ax[1].set_ylabel('mean absolute percentage error (%)')
 ax[1].set_xlabel('# days ahead')
